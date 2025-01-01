@@ -1,21 +1,14 @@
+from task3_app.models import CreateDb
+from task3_app.fetchSave import change_value
 import requests
 import json
-from task3_app.models import CreateDb
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
-fp_url = 'https://fund.fipiran.ir/api/v1/fund/fundcompare'
+
+fp_url = "https://fund.fipiran.ir/api/v1/fund/fundcompare"
 
 
-def change_value(val):
-    new_val = ''
-    for i in range(len(val)):
-        if val[i] == '_':
-            new_val += val[i + 1].upper()
-        else:
-            new_val += val[i]
-    return new_val
-
-
+# for validation data
 class DataV(BaseModel):
     model_config = ConfigDict(alias_generator=change_value)
     reg_no: int = Field(alias="regNo")
@@ -72,14 +65,66 @@ class DataV(BaseModel):
     fund_watch: Optional[str] = None
 
 
+# return data from api
 def fetch_data_from_api(url):
     response = requests.get(url)
     return json.loads(response.text)
 
 
-def save_data_to_db(data):
-    data_list = [DataV.model_validate(item) for item in data['items']]
-    for item in data_list:
+# return validated data from API
+def validated_data_from_api():
+    my_data = fetch_data_from_api(fp_url)
+    data_api = [DataV.model_validate(item) for item in my_data['items']]
+    return data_api
+
+
+# return list of regno in api
+def regno_in_api():
+    list_regno = []
+    for i in validated_data_from_api():
+        list_regno.append(i.reg_no)
+    return list_regno
+
+
+# return list of regno in DB
+def regno_in_db():
+    regno_list = CreateDb.objects.values_list('reg_no', flat=True)
+    return list(regno_list)
+
+
+list_of_regno_in_api = regno_in_api()
+list_of_regno_in_db = regno_in_db()
+
+
+# return list of regno not in db
+def regno_not_db():
+    list_not_in_db = []
+    for i in list_of_regno_in_api:
+        if i in list_of_regno_in_db:
+            pass
+        else:
+            list_not_in_db.append(i)
+    return list_not_in_db
+
+
+list_regno_not_in_db = regno_not_db()
+validated_data = validated_data_from_api()
+
+
+# return rows to be added
+def new_rows():
+    rows_be_add = []
+    for i in validated_data:
+        if i.reg_no in list_regno_not_in_db:
+            rows_be_add.append(i)
+    return rows_be_add
+
+
+rows_be_add_to_db = new_rows()
+
+
+def save_data_to_db():
+    for item in rows_be_add_to_db:
         CreateDb.objects.create(
             reg_no=item.reg_no,
             name=item.name,
@@ -134,9 +179,3 @@ def save_data_to_db(data):
             ins_code=item.ins_code,
             fund_watch=item.fund_watch,
         )
-
-
-def fetch_and_store_data():
-    data = fetch_data_from_api(fp_url)
-    save_data_to_db(data)
-
